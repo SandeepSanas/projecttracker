@@ -1,0 +1,1508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ProjectTracker</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', system-ui, sans-serif; }
+  body {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99,102,241,0.12), transparent),
+      radial-gradient(ellipse 60% 40% at 90% 10%, rgba(14,165,233,0.10), transparent),
+      radial-gradient(ellipse 50% 30% at 50% 100%, rgba(168,85,247,0.08), transparent);
+    background-attachment: fixed;
+  }
+  .data-mono { font-family:'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; }
+  .glass {
+    background: rgba(255,255,255,0.55);
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border: 1px solid rgba(255,255,255,0.45);
+    box-shadow: 0 8px 32px rgba(15,23,42,0.06);
+  }
+  .blueprint-grid { background-image: linear-gradient(rgba(148,197,255,.09) 1px,transparent 1px), linear-gradient(90deg,rgba(148,197,255,.09) 1px,transparent 1px); background-size:28px 28px; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<!-- LOGIN -->
+<div id="login-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 overflow-hidden">
+  <div class="absolute inset-0 blueprint-grid"></div>
+  <form id="login-form" class="relative max-w-sm w-full mx-4 bg-white/[0.06] backdrop-blur-xl rounded-2xl p-6 shadow-2xl border border-white/10 space-y-3">
+    <div class="flex flex-col items-center mb-1">
+      <div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center text-white font-extrabold text-xl shadow-lg mb-2">JC</div>
+      <p class="eyebrow text-sky-400">JustClick</p>
+    </div>
+    <h1 class="text-2xl font-bold text-white text-center">ProjectTracker</h1>
+    <p class="eyebrow text-sky-400 text-center mb-2">Real-time Site Monitor</p>
+    <input id="login-email" type="email" required placeholder="Email" class="w-full text-sm rounded-xl px-3 py-2.5 bg-white/90" />
+    <input id="login-password" type="password" required placeholder="Password" class="w-full text-sm rounded-xl px-3 py-2.5 bg-white/90" />
+    <p id="login-error" class="hidden text-xs text-red-300"></p>
+    <button type="submit" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold">Sign In</button>
+    <p class="text-center text-slate-500 eyebrow pt-1">No account yet? Ask your Super Admin / Company Admin to create one.</p>
+  </form>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden min-h-screen flex flex-col">
+  <header class="sticky top-0 z-40 border-b border-white/40 px-4 py-2 flex items-center justify-between" style="background: rgba(255,255,255,0.72); backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5);">
+    <div class="flex items-center gap-2">
+      <img id="header-logo" class="hidden w-12 h-12 rounded-lg object-cover" />
+      <div>
+        <h1 class="font-bold text-sm">ProjectTracker</h1>
+        <p id="header-sub" class="text-[10px] text-slate-500 data-mono"></p>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="role-label" class="eyebrow text-slate-500"></span>
+      <button id="logout-btn" class="text-xs px-3 py-1.5 rounded-xl border">Sign out</button>
+    </div>
+  </header>
+  <div class="flex flex-1 min-h-0">
+    <aside class="w-52 shrink-0 border-r bg-white/90 p-2">
+      <nav id="side-nav" class="flex flex-col gap-1 text-sm"></nav>
+    </aside>
+    <main id="view" class="flex-1 overflow-y-auto p-5"></main>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+  createUserWithEmailAndPassword
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, setDoc, addDoc, collection,
+  onSnapshot, query, where, orderBy, serverTimestamp, updateDoc, getDocs, deleteDoc, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytes, getDownloadURL
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBudo4nJSg91lpbEUXuaHMhZ4C86252Slk",
+  authDomain: "unittracker-41273.firebaseapp.com",
+  projectId: "unittracker-41273",
+  storageBucket: "unittracker-41273.firebasestorage.app",
+  messagingSenderId: "563517467794",
+  appId: "1:563517467794:web:8795f4a6b249a3db294a4b"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+// ── Session state ────────────────────────────────────────────────
+let session = { uid:null, email:null, isSuperAdmin:false, companyId:null, profile:null };
+let unsubscribers = []; // active Firestore listeners for the current view, cleared on nav change
+
+function clearListeners() { unsubscribers.forEach(u => u()); unsubscribers = []; }
+
+// ── Auth wiring ──────────────────────────────────────────────────
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errBox = document.getElementById('login-error');
+  errBox.classList.add('hidden');
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (err) {
+    errBox.textContent = friendlyAuthError(err);
+    errBox.classList.remove('hidden');
+  }
+});
+document.getElementById('logout-btn').addEventListener('click', () => signOut(auth));
+
+function friendlyAuthError(err) {
+  if (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password') return 'Incorrect email or password.';
+  if (err.code === 'auth/user-not-found') return 'No account with that email. Ask your admin to create one.';
+  if (err.code === 'auth/too-many-requests') return 'Too many attempts — wait a moment and try again.';
+  return err.message;
+}
+
+onAuthStateChanged(auth, async (user) => {
+  clearListeners();
+  if (!user) {
+    session = { uid:null, email:null, isSuperAdmin:false, companyId:null, profile:null };
+    document.getElementById('login-screen').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+    return;
+  }
+  session.uid = user.uid;
+  session.email = user.email;
+
+  // Check super_admin first
+  const adminSnap = await getDoc(doc(db, 'admins', user.uid));
+  if (adminSnap.exists()) {
+    session.isSuperAdmin = true;
+    session.companyId = null;
+    session.profile = { role:'super_admin', name: user.email, permissions:{} };
+  } else {
+    // Find which company this user belongs to via a small lookup doc
+    // written when the account was created (see createAuthAccountWithoutSwitchingSession callers).
+    const lookupSnap = await getDoc(doc(db, 'userCompanyLookup', user.uid));
+    if (!lookupSnap.exists()) {
+      alert('Your account is not linked to a company yet. Contact your Super Admin.');
+      await signOut(auth);
+      return;
+    }
+    session.companyId = lookupSnap.data().companyId;
+    const profileSnap = await getDoc(doc(db, 'companies', session.companyId, 'users', user.uid));
+    session.profile = profileSnap.exists() ? profileSnap.data() : null;
+    const companySnap = await getDoc(doc(db, 'companies', session.companyId));
+    session.companyName = companySnap.exists() ? companySnap.data().name : '';
+    session.companyLogoUrl = companySnap.exists() ? (companySnap.data().logoUrl || '') : '';
+  }
+
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('role-label').textContent = session.profile?.role || 'super_admin';
+  document.getElementById('header-sub').textContent = session.isSuperAdmin ? 'Platform Admin' : (session.companyName || session.companyId || '');
+  const logoImg = document.getElementById('header-logo');
+  if (session.companyLogoUrl) { logoImg.src = session.companyLogoUrl; logoImg.classList.remove('hidden'); }
+  else { logoImg.classList.add('hidden'); }
+  buildNav();
+});
+
+// ── Nav ──────────────────────────────────────────────────────────
+function moduleList() {
+  if (session.isSuperAdmin) return [{ id:'companies', label:'Companies' }];
+  const role = session.profile?.role;
+  const isManager = role === 'company_admin' || role === 'management';
+  const base = [{ id:'dashboard', label:'Dashboard' }];
+  if (isManager || session.profile?.permissions?.visual?.view) base.push({ id:'visual', label:'Visual Plan' });
+  GENERIC_MODULES.forEach(cfg => {
+    if (isManager || session.profile?.permissions?.[cfg.id]?.view) base.push({ id: cfg.id, label: cfg.label });
+  });
+  if (isManager || session.profile?.permissions?.activity?.view) base.push({ id:'activity', label:'Activity Log' });
+  if (role === 'company_admin') base.push({ id:'users', label:'Users' }, { id:'projects', label:'Projects' }, { id:'settings', label:'Company Settings' });
+  return base;
+}
+
+function buildNav() {
+  const nav = document.getElementById('side-nav');
+  const mods = moduleList();
+  nav.innerHTML = mods.map(m => `<button data-mod="${m.id}" class="nav-btn text-left px-3 py-2 rounded-xl hover:bg-slate-100">${m.label}</button>`).join('');
+  nav.querySelectorAll('[data-mod]').forEach(b => b.addEventListener('click', () => renderView(b.dataset.mod)));
+  renderView(mods[0].id);
+}
+
+function renderView(id) {
+  clearListeners();
+  document.querySelectorAll('#side-nav [data-mod]').forEach(b => b.classList.toggle('bg-blue-50', b.dataset.mod === id));
+  const view = document.getElementById('view');
+  if (id === 'companies') return renderCompanies(view);
+  if (id === 'users') return renderUsers(view);
+  if (id === 'projects') return renderProjects(view);
+  if (id === 'settings') return renderSettings(view);
+  if (id === 'dashboard') return renderDashboard(view);
+  if (id === 'visual') return renderVisual(view);
+  if (id === 'activity') return renderActivityLog(view);
+  const cfg = GENERIC_MODULES.find(m => m.id === id);
+  if (cfg) return renderGenericModule(view, cfg);
+}
+
+// ── SUPER ADMIN: Companies ──────────────────────────────────────
+async function renderCompanies(view) {
+  view.innerHTML = `
+    <h2 class="text-xl font-bold mb-4">Companies</h2>
+    <form id="new-company-form" class="glass rounded-2xl p-4 mb-5 space-y-2 max-w-md">
+      <h3 class="font-semibold text-sm">Add company + first admin</h3>
+      <input id="nc-company" placeholder="Company name *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <input id="nc-admin-name" placeholder="Company Admin name *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <input id="nc-admin-email" type="email" placeholder="Company Admin email *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <input id="nc-admin-pass" type="text" placeholder="Temporary password *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <button class="w-full py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Create</button>
+      <p id="nc-error" class="hidden text-xs text-red-600"></p>
+    </form>
+    <div id="company-list" class="space-y-2"></div>`;
+
+  document.getElementById('new-company-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    if (btn.disabled) return; // already submitting — ignore extra clicks
+    btn.disabled = true; btn.textContent = 'Creating…';
+    const errEl = document.getElementById('nc-error');
+    errEl.classList.add('hidden');
+    const companyName = document.getElementById('nc-company').value.trim();
+    const adminName = document.getElementById('nc-admin-name').value.trim();
+    const adminEmail = document.getElementById('nc-admin-email').value.trim();
+    const adminPass = document.getElementById('nc-admin-pass').value;
+    try {
+      const companyRef = await addDoc(collection(db, 'companies'), { name: companyName, createdAt: serverTimestamp() });
+      const newUid = await createAuthAccountWithoutSwitchingSession(adminEmail, adminPass);
+      const fullPerms = { view:true, add:true, update:true, delete:true };
+      const allModulePermissions = {};
+      ALL_MODULES.forEach(m => allModulePermissions[m] = fullPerms);
+      await setDoc(doc(db, 'companies', companyRef.id, 'users', newUid), {
+        name: adminName, email: adminEmail, role:'company_admin',
+        permissions: allModulePermissions
+      });
+      await setDoc(doc(db, 'userCompanyLookup', newUid), { companyId: companyRef.id });
+      e.target.reset();
+      loadCompanyList();
+    } catch (err) {
+      errEl.textContent = err.message; errEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Create';
+    }
+  });
+  loadCompanyList();
+}
+
+async function loadCompanyList() {
+  const snap = await getDocs(collection(db, 'companies'));
+  document.getElementById('company-list').innerHTML = snap.docs.map(d => `
+    <div class="glass rounded-xl p-3 text-sm flex justify-between">
+      <span>${escapeHtml(d.data().name)}</span>
+      <span class="text-slate-400 text-xs data-mono">${d.id}</span>
+    </div>`).join('') || '<p class="text-slate-400 text-sm">No companies yet.</p>';
+}
+
+// ── Create an Auth account WITHOUT logging the browser in as that
+//    new user — uses a throwaway secondary Firebase App instance so
+//    the admin's own session stays active. No Cloud Functions needed.
+let secondaryAppCounter = 0;
+async function createAuthAccountWithoutSwitchingSession(email, password) {
+  const appMod = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js");
+  const authMod = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js");
+  const secondary = appMod.initializeApp(firebaseConfig, 'secondary-' + (secondaryAppCounter++));
+  const secondaryAuth = authMod.getAuth(secondary);
+  const cred = await authMod.createUserWithEmailAndPassword(secondaryAuth, email, password);
+  const uid = cred.user.uid;
+  await authMod.signOut(secondaryAuth);
+  await appMod.deleteApp(secondary);
+  return uid;
+}
+
+// ── COMPANY ADMIN: Users ────────────────────────────────────────
+const ROLES = ['company_admin','project_manager','chief_engineer','sales','crm','facility','management'];
+
+// ── Config for every module built with the shared generic engine ──
+// Each entry describes its own fields; the engine (further below)
+// handles project-scoping, permissions, list/add/edit/delete, and
+// real-time sync identically for all of them. To add a brand-new
+// module later, add one entry here — no other code changes needed.
+const GENERIC_MODULES = [
+  { id:'snags', label:'Snags', cardStyle:'severity-square', fields:[
+    {key:'title', label:'Title', type:'text', required:true},
+    {key:'unit_number', label:'Unit / Location', type:'text'},
+    {key:'severity', label:'Severity', type:'select', options:['low','medium','high']},
+    {key:'status', label:'Status', type:'select', options:['open','in_progress','resolved']},
+    {key:'assigned_to', label:'Assigned To', type:'text'},
+    {key:'description', label:'Description', type:'textarea'}
+  ]},
+  { id:'tasks', label:'Tasks', fields:[
+    {key:'title', label:'Title', type:'text', required:true},
+    {key:'due_date', label:'Due Date', type:'date'},
+    {key:'assigned_to', label:'Assigned To', type:'text'},
+    {key:'status', label:'Status', type:'select', options:['pending','in_progress','done']},
+    {key:'notes', label:'Notes', type:'textarea'}
+  ]},
+  { id:'budget', label:'Budget', fields:[
+    {key:'category', label:'Category', type:'text', required:true},
+    {key:'item', label:'Item', type:'text'},
+    {key:'budgeted_amount', label:'Budgeted (₹)', type:'number'},
+    {key:'actual_amount', label:'Actual (₹)', type:'number'},
+    {key:'notes', label:'Notes', type:'textarea'}
+  ]},
+  { id:'drawings', label:'Drawings', fields:[
+    {key:'name', label:'Drawing Name', type:'text', required:true},
+    {key:'category', label:'Category', type:'select-addable', options:['Architectural','Structural','MEP','As-built','Landscape']},
+    {key:'version', label:'Version', type:'text'},
+    {key:'uploaded_by', label:'Uploaded By', type:'text'},
+    {key:'file', label:'Drawing File / Link', type:'file'}
+  ]},
+  { id:'vendors', label:'Vendors', fields:[
+    {key:'name', label:'Vendor Name', type:'text', required:true},
+    {key:'category', label:'Category', type:'select-addable', options:['Lifts','DG Sets','Fire Systems','STP','CCTV','Finishing']},
+    {key:'contact_person', label:'Contact Person', type:'text'},
+    {key:'phone', label:'Phone', type:'text'},
+    {key:'email', label:'Email', type:'text'},
+    {key:'amc_status', label:'AMC Status', type:'select', options:['active','expiring','expired','na']},
+    {key:'work_order', label:'Work Order File / Link', type:'file'}
+  ]},
+  { id:'contacts', label:'Contacts', fields:[
+    {key:'name', label:'Name', type:'text', required:true},
+    {key:'role', label:'Role', type:'text'},
+    {key:'company', label:'Company', type:'text'},
+    {key:'phone', label:'Phone', type:'text'},
+    {key:'email', label:'Email', type:'text'}
+  ]},
+  { id:'nocs', label:'NOC & AMC', fields:[
+    {key:'name', label:'Certificate Name', type:'text', required:true},
+    {key:'authority', label:'Authority', type:'text'},
+    {key:'status', label:'Status', type:'select', options:['pending','applied','received']},
+    {key:'issue_date', label:'Issue Date', type:'date'},
+    {key:'expiry_date', label:'Expiry Date', type:'date'},
+    {key:'notes', label:'Note', type:'textarea'},
+    {key:'cert_file', label:'Certificate File / Link', type:'file'}
+  ]},
+  { id:'amenities', label:'Amenities', fields:[
+    {key:'name', label:'Amenity', type:'text', required:true},
+    {key:'location', label:'Location', type:'text'},
+    {key:'status', label:'Status', type:'select', options:['planned','in_progress','completed']},
+    {key:'completion', label:'Completion %', type:'number'},
+    {key:'notes', label:'Notes', type:'textarea'},
+    {key:'photo', label:'Photo', type:'file'}
+  ]},
+  { id:'assets', label:'Assets', fields:[
+    {key:'name', label:'Asset', type:'text', required:true},
+    {key:'category', label:'Category', type:'select-addable', options:['Vertical Transport','Power','Fire Safety','Security','Water','MEP']},
+    {key:'location', label:'Location', type:'text'},
+    {key:'condition', label:'Condition', type:'select', options:['new','good','fair','poor']},
+    {key:'status', label:'Status', type:'select', options:['pending','in_progress','completed']},
+    {key:'doc_file', label:'Document File / Link', type:'file'}
+  ]},
+  { id:'keys', label:'Keys', fields:[
+    {key:'unit_number', label:'Unit', type:'text', required:true},
+    {key:'key_holder', label:'Key Holder', type:'text'},
+    {key:'issued_date', label:'Issued Date', type:'date'},
+    {key:'returned_date', label:'Returned Date', type:'date'},
+    {key:'status', label:'Status', type:'select', options:['issued','returned']}
+  ]},
+  { id:'safety', label:'Safety', conditionalOn:'type', fields:[
+    {key:'type', label:'Type', type:'select', options:['rule','checklist','training','incident_report']},
+    {key:'title', label:'Title', type:'text', required:true, showFor:['rule','checklist','incident_report']},
+    {key:'topic', label:'Training Topic', type:'text', showFor:['training']},
+    {key:'attendees', label:'Attendees', type:'text', showFor:['training']},
+    {key:'date', label:'Date', type:'date', showFor:['training','incident_report']},
+    {key:'severity', label:'Severity', type:'select', options:['low','medium','high'], showFor:['incident_report']},
+    {key:'status', label:'Status', type:'select', options:['open','closed']},
+    {key:'notes', label:'Notes / Description', type:'textarea'}
+  ]},
+  { id:'announcements', label:'Announcements', fields:[
+    {key:'title', label:'Title', type:'text', required:true},
+    {key:'message', label:'Message', type:'textarea'}
+  ]},
+  { id:'inventory', label:'Inventory', fields:[
+    {key:'name', label:'Item Name', type:'text', required:true},
+    {key:'category', label:'Category', type:'select-addable', options:['Vertical Transport','Safety','Power','Security','Amenities','Water']},
+    {key:'location', label:'Location', type:'text'},
+    {key:'qty', label:'Quantity', type:'number'},
+    {key:'condition', label:'Condition', type:'select', options:['new','good','fair','poor']}
+  ]},
+  { id:'sla', label:'SLA', fields:[
+    {key:'title', label:'SLA Item', type:'text', required:true},
+    {key:'category', label:'Category', type:'text'},
+    {key:'target_days', label:'Target (days)', type:'number'},
+    {key:'status', label:'Status', type:'select', options:['on_track','at_risk','breached']},
+    {key:'notes', label:'Notes', type:'textarea'}
+  ]},
+  { id:'tour', label:'Virtual Tour', fields:[
+    {key:'name', label:'Spot / Location Name', type:'text', required:true},
+    {key:'description', label:'Description', type:'textarea'},
+    {key:'url', label:'360° Link (URL)', type:'text'},
+    {key:'file', label:'Or Upload File', type:'file'},
+    {key:'notes', label:'Notes', type:'textarea'}
+  ]},
+  { id:'society', label:'Handover Pack', fields:[
+    {key:'item_name', label:'Item', type:'text', required:true},
+    {key:'status', label:'Status', type:'select', options:['pending','in_progress','completed']},
+    {key:'notes', label:'Notes', type:'textarea'},
+    {key:'doc_file', label:'Document File / Link', type:'file'}
+  ]}
+];
+
+// Single source of truth for the Users screen's permission checklist —
+// 'visual' plus every generic module. Stays in sync automatically as
+// GENERIC_MODULES grows.
+const ALL_MODULES = ['visual', ...GENERIC_MODULES.map(m => m.id), 'activity'];
+
+// Builds the "tick what they can do" field set per module (View / Add /
+// Update / Delete) — reused for both Add User and Edit User so
+// permissions stay dynamic/editable. A module only ends up in the
+// saved permissions object if at least one box is ticked for it.
+function moduleFieldsHTML(prefix, existing = {}) {
+  return ALL_MODULES.map(m => {
+    const ex = existing[m] || {};
+    return `
+    <div class="border-b border-slate-100 py-1.5">
+      <p class="text-xs font-medium capitalize">${m}</p>
+      <div class="flex gap-3 mt-1 text-[11px] text-slate-500">
+        ${['view','add','update','delete'].map(p => `
+          <label class="flex items-center gap-1">
+            <input type="checkbox" class="${prefix}-mod-perm" data-mod="${m}" data-perm="${p}" ${ex[p] ? 'checked' : ''}/> ${p}
+          </label>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function readModuleFields(prefix) {
+  const permissions = {};
+  ALL_MODULES.forEach(m => {
+    const perms = {};
+    let any = false;
+    ['view','add','update','delete'].forEach(p => {
+      const el = document.querySelector(`.${prefix}-mod-perm[data-mod="${m}"][data-perm="${p}"]`);
+      const checked = el ? el.checked : false;
+      perms[p] = checked;
+      if (checked) any = true;
+    });
+    if (any) permissions[m] = perms; // only store modules with at least one permission granted
+  });
+  return permissions;
+}
+
+async function renderUsers(view) {
+  view.innerHTML = `
+    <h2 class="text-xl font-bold mb-4">Users</h2>
+    <form id="new-user-form" class="glass rounded-2xl p-4 mb-5 space-y-2 max-w-md">
+      <input id="nu-name" placeholder="Full name *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <input id="nu-email" type="email" placeholder="Email *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <input id="nu-pass" placeholder="Temporary password *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <select id="nu-role" class="w-full border rounded-lg px-2 py-1.5 text-sm">${ROLES.map(r=>`<option value="${r}">${r}</option>`).join('')}</select>
+      <div class="text-xs">
+        <p class="eyebrow text-slate-500 mb-1">Module access &amp; permissions — tick a module, then tick what they can do in it</p>
+        <div id="nu-modules" class="max-h-64 overflow-y-auto">${moduleFieldsHTML('nu')}</div>
+      </div>
+      <button class="w-full py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Add user</button>
+      <p id="nu-error" class="hidden text-xs text-red-600"></p>
+    </form>
+    <div id="user-list" class="space-y-2"></div>
+    <div id="edit-user-modal"></div>`;
+
+  document.getElementById('new-user-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = 'Adding…';
+    const errEl = document.getElementById('nu-error');
+    errEl.classList.add('hidden');
+    const name = document.getElementById('nu-name').value.trim();
+    const email = document.getElementById('nu-email').value.trim();
+    const password = document.getElementById('nu-pass').value;
+    const role = document.getElementById('nu-role').value;
+    const permissions = readModuleFields('nu');
+    try {
+      const newUid = await createAuthAccountWithoutSwitchingSession(email, password);
+      await setDoc(doc(db, 'companies', session.companyId, 'users', newUid), { name, email, role, permissions });
+      await setDoc(doc(db, 'userCompanyLookup', newUid), { companyId: session.companyId });
+      e.target.reset();
+      loadUserList();
+    } catch (err) {
+      errEl.textContent = err.message; errEl.classList.remove('hidden');
+    } finally {
+      btn.disabled = false; btn.textContent = 'Add user';
+    }
+  });
+  loadUserList();
+}
+
+async function loadUserList() {
+  const snap = await getDocs(collection(db, 'companies', session.companyId, 'users'));
+  document.getElementById('user-list').innerHTML = snap.docs.map(d => {
+    const u = d.data();
+    const modNames = Object.keys(u.permissions || {});
+    return `<div class="glass rounded-xl p-3 text-sm flex justify-between items-start gap-2">
+      <div>
+        <p class="font-semibold">${escapeHtml(u.name)} <span class="eyebrow text-slate-400">${u.role}</span></p>
+        <p class="text-xs text-slate-500">${escapeHtml(u.email)}</p>
+        <p class="text-[10px] text-slate-400 mt-1">Modules: ${modNames.join(', ') || '—'}</p>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button data-edit-user="${d.id}" class="text-xs px-2 py-1 rounded-lg border">Edit</button>
+        <button data-delete-user="${d.id}" class="text-xs px-2 py-1 rounded-lg border border-red-300 text-red-600">Remove</button>
+      </div>
+    </div>`;
+  }).join('') || '<p class="text-slate-400 text-sm">No users yet.</p>';
+
+  document.querySelectorAll('[data-edit-user]').forEach(b => b.addEventListener('click', () => openEditUser(b.dataset.editUser)));
+  document.querySelectorAll('[data-delete-user]').forEach(b => b.addEventListener('click', () => deleteUserFlow(b.dataset.deleteUser)));
+}
+
+async function openEditUser(uid) {
+  const snap = await getDoc(doc(db, 'companies', session.companyId, 'users', uid));
+  if (!snap.exists()) return;
+  const u = snap.data();
+  const modal = document.getElementById('edit-user-modal');
+  modal.innerHTML = `
+    <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl p-4 max-w-md w-full max-h-[85vh] overflow-y-auto space-y-2">
+        <h3 class="font-bold text-sm">Edit ${escapeHtml(u.name)}</h3>
+        <p class="text-[11px] text-slate-400">${escapeHtml(u.email)} — email/password aren't editable here yet; that needs a password-reset flow we'll add later.</p>
+        <input id="eu-name" value="${escapeHtml(u.name)}" class="w-full border rounded-lg px-2 py-1.5 text-sm"/>
+        <select id="eu-role" class="w-full border rounded-lg px-2 py-1.5 text-sm">${ROLES.map(r=>`<option value="${r}" ${r===u.role?'selected':''}>${r}</option>`).join('')}</select>
+        <div class="text-xs">
+          <p class="eyebrow text-slate-500 mb-1">Module access &amp; permissions</p>
+          <div id="eu-modules" class="max-h-64 overflow-y-auto">${moduleFieldsHTML('eu', u.permissions || {})}</div>
+        </div>
+        <div class="flex gap-2 pt-2">
+          <button id="eu-save" class="flex-1 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Save</button>
+          <button id="eu-cancel" class="flex-1 py-2 rounded-xl border text-sm">Cancel</button>
+        </div>
+        <p id="eu-error" class="hidden text-xs text-red-600"></p>
+      </div>
+    </div>`;
+  document.getElementById('eu-cancel').addEventListener('click', () => modal.innerHTML = '');
+  document.getElementById('eu-save').addEventListener('click', async () => {
+    const btn = document.getElementById('eu-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await updateDoc(doc(db, 'companies', session.companyId, 'users', uid), {
+        name: document.getElementById('eu-name').value.trim(),
+        role: document.getElementById('eu-role').value,
+        permissions: readModuleFields('eu')
+      });
+      modal.innerHTML = '';
+      loadUserList();
+    } catch (err) {
+      document.getElementById('eu-error').textContent = err.message;
+      document.getElementById('eu-error').classList.remove('hidden');
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  });
+}
+
+async function deleteUserFlow(uid) {
+  if (!confirm("Remove this user's access? Their login will stop working immediately. (Note: this removes their app profile — the underlying login account itself isn't deleted, since that needs an admin-only tool we haven't built yet.)")) return;
+  await deleteDoc(doc(db, 'companies', session.companyId, 'users', uid));
+  await deleteDoc(doc(db, 'userCompanyLookup', uid)).catch(() => {});
+  loadUserList();
+}
+
+// ── COMPANY ADMIN: Settings (logo upload) ───────────────────────
+async function renderSettings(view) {
+  const companySnap = await getDoc(doc(db, 'companies', session.companyId));
+  const company = companySnap.exists() ? companySnap.data() : {};
+  view.innerHTML = `
+    <h2 class="text-xl font-bold mb-4">Company Settings</h2>
+    <div class="glass rounded-2xl p-4 max-w-md space-y-3">
+      <div>
+        <p class="eyebrow text-slate-500 mb-2">Company Logo</p>
+        <img id="settings-logo-preview" class="w-20 h-20 rounded-xl object-cover border ${company.logoUrl ? '' : 'hidden'}" src="${company.logoUrl || ''}"/>
+        <input id="settings-logo-file" type="file" accept="image/*" class="text-xs mt-2"/>
+        <button id="settings-logo-upload" class="mt-2 text-xs px-3 py-1.5 rounded-xl bg-blue-600 text-white">Upload logo</button>
+        <p id="settings-logo-status" class="text-xs mt-1"></p>
+      </div>
+    </div>`;
+
+  document.getElementById('settings-logo-upload').addEventListener('click', async () => {
+    const fileInput = document.getElementById('settings-logo-file');
+    const status = document.getElementById('settings-logo-status');
+    const file = fileInput.files[0];
+    if (!file) { status.textContent = 'Choose a file first.'; status.className = 'text-xs mt-1 text-red-600'; return; }
+    status.textContent = 'Uploading…'; status.className = 'text-xs mt-1 text-slate-500';
+    try {
+      const fileRef = ref(storage, `companies/${session.companyId}/branding/logo-${Date.now()}-${file.name}`);
+      await uploadBytes(fileRef, file);
+      const url = await getDownloadURL(fileRef);
+      await updateDoc(doc(db, 'companies', session.companyId), { logoUrl: url });
+      session.companyLogoUrl = url;
+      const headerLogo = document.getElementById('header-logo');
+      headerLogo.src = url; headerLogo.classList.remove('hidden');
+      document.getElementById('settings-logo-preview').src = url;
+      document.getElementById('settings-logo-preview').classList.remove('hidden');
+      status.textContent = 'Logo updated ✓'; status.className = 'text-xs mt-1 text-emerald-600';
+    } catch (err) {
+      status.textContent = err.message; status.className = 'text-xs mt-1 text-red-600';
+    }
+  });
+}
+
+// ── COMPANY ADMIN: Projects ─────────────────────────────────────
+async function renderProjects(view) {
+  view.innerHTML = `
+    <h2 class="text-xl font-bold mb-4">Projects</h2>
+    <form id="new-project-form" class="glass rounded-2xl p-4 mb-5 space-y-2 max-w-md">
+      <input id="np-name" placeholder="Project name *" class="w-full border rounded-lg px-2 py-1.5 text-sm" required/>
+      <input id="np-location" placeholder="Location" class="w-full border rounded-lg px-2 py-1.5 text-sm"/>
+      <button class="w-full py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Add project</button>
+    </form>
+    <div id="project-list" class="space-y-2"></div>`;
+
+  document.getElementById('new-project-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button');
+    if (btn.disabled) return;
+    btn.disabled = true; btn.textContent = 'Adding…';
+    const name = document.getElementById('np-name').value.trim();
+    const location = document.getElementById('np-location').value.trim();
+    try {
+      await addDoc(collection(db, 'companies', session.companyId, 'projects'), { name, location });
+      e.target.reset();
+      loadProjectList();
+    } finally {
+      btn.disabled = false; btn.textContent = 'Add project';
+    }
+  });
+  loadProjectList();
+}
+
+async function loadProjectList() {
+  const snap = await getDocs(collection(db, 'companies', session.companyId, 'projects'));
+  window._projectCache = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  document.getElementById('project-list').innerHTML = window._projectCache.map(p => `
+    <div class="glass rounded-xl p-3 text-sm flex justify-between">
+      <span>${escapeHtml(p.name)} <span class="text-slate-400">${p.location?'· '+escapeHtml(p.location):''}</span></span>
+      <span class="text-slate-400 text-xs data-mono">${p.id}</span>
+    </div>`).join('') || '<p class="text-slate-400 text-sm">No projects yet — add one, then use its ID in Dashboard/Visual Plan.</p>';
+}
+
+// ── Shared: list this company's projects (used by the selectors below) ─
+async function loadCompanyProjects() {
+  const snap = await getDocs(collection(db, 'companies', session.companyId, 'projects'));
+  return snap.docs.map(d => ({ id:d.id, ...d.data() }));
+}
+
+// ── DASHBOARD (real-time, aggregates across modules the viewer can see) ─
+let dashboardProjectId = null;
+let dashboardCache = {};
+async function renderDashboard(view) {
+  view.innerHTML = `<p class="text-slate-400 text-sm">Loading…</p>`;
+  const projects = await loadCompanyProjects();
+  if (!projects.length) { view.innerHTML = `<p class="text-slate-500 text-sm">No project yet. Ask your Company Admin to add one under "Projects".</p>`; return; }
+  if (!dashboardProjectId || !projects.some(p => p.id === dashboardProjectId)) dashboardProjectId = projects[0].id;
+
+  const role = session.profile?.role;
+  const isManager = role === 'company_admin' || role === 'management';
+  const canView = (m) => isManager || !!session.profile?.permissions?.[m]?.view;
+
+  view.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold">Project Overview</h2>
+      ${projects.length > 1
+        ? `<select id="dash-project-select" class="border rounded-lg px-2 py-1.5 text-xs">${projects.map(p => `<option value="${p.id}" ${p.id===dashboardProjectId?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select>`
+        : `<span class="eyebrow text-slate-400">${escapeHtml(projects[0].name)}</span>`}
+    </div>
+    ${canView('visual') ? '<div id="kpi-cards" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-3"></div>' : ''}
+    <div id="kpi-cards-2" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5"></div>
+    <div class="grid lg:grid-cols-3 gap-4">
+      ${canView('visual') ? `<div class="glass rounded-2xl p-4"><h3 class="font-semibold text-sm mb-3">Unit Status Breakdown</h3><div id="status-breakdown" class="space-y-2"></div></div>` : ''}
+      ${canView('snags') ? `<div class="glass rounded-2xl p-4"><h3 class="font-semibold text-sm mb-3">Open Snags by Severity</h3><div id="snag-breakdown" class="space-y-2"></div></div>` : ''}
+      ${canView('inventory') ? `<div class="glass rounded-2xl p-4"><h3 class="font-semibold text-sm mb-3">Inventory</h3><div id="inventory-breakdown" class="space-y-2"></div></div>` : ''}
+    </div>
+    ${!canView('visual') && !canView('snags') && !canView('inventory') ? '<p class="text-slate-400 text-sm mt-4">No dashboard data available for your current permissions.</p>' : ''}`;
+
+  if (projects.length > 1) {
+    document.getElementById('dash-project-select').addEventListener('change', (e) => {
+      dashboardProjectId = e.target.value;
+      renderDashboard(view);
+    });
+  }
+
+  dashboardCache = {};
+  // Only subscribe to collections this person is actually allowed to view —
+  // both for correctness (no data leak into aggregate numbers) and efficiency.
+  const modulesToWatch = ['visual','snags','tasks','budget','nocs','inventory'].filter(m =>
+    m === 'visual' ? canView('visual') : canView(m)
+  );
+  modulesToWatch.forEach(m => {
+    const collectionName = m === 'visual' ? 'units' : m;
+    const colRef = collection(db, 'companies', session.companyId, 'projects', dashboardProjectId, collectionName);
+    const unsub = onSnapshot(colRef, (snap) => {
+      dashboardCache[m] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      renderDashboardAggregates(canView);
+    }, () => { dashboardCache[m] = dashboardCache[m] || []; });
+    unsubscribers.push(unsub);
+  });
+}
+
+function renderDashboardAggregates(canView) {
+  const units = dashboardCache.visual || [];
+  const snags = dashboardCache.snags || [];
+  const tasks = dashboardCache.tasks || [];
+  const budget = dashboardCache.budget || [];
+  const nocs = dashboardCache.nocs || [];
+  const inventory = dashboardCache.inventory || [];
+
+  if (canView('visual')) { renderKPIs(units); renderStatusBreakdown(units); }
+
+  const today = new Date().toISOString().slice(0,10);
+  const cards2 = [];
+
+  if (canView('snags')) {
+    const open = snags.filter(s => s.status !== 'resolved').length;
+    const high = snags.filter(s => s.severity === 'high' && s.status !== 'resolved').length;
+    cards2.push({ label:'Open Snags', value: open, sub: high ? `${high} high severity` : '', tone: open ? 'text-amber-600' : '' });
+  }
+  if (canView('tasks')) {
+    const overdue = tasks.filter(t => t.status !== 'done' && t.due_date && t.due_date < today).length;
+    const pending = tasks.filter(t => t.status !== 'done').length;
+    cards2.push({ label:'Overdue Tasks', value: overdue, sub: `${pending} pending total`, tone: overdue ? 'text-red-600' : '' });
+  }
+  if (canView('budget')) {
+    const budgeted = budget.reduce((s,b) => s + (Number(b.budgeted_amount) || 0), 0);
+    const actual = budget.reduce((s,b) => s + (Number(b.actual_amount) || 0), 0);
+    const pct = budgeted ? Math.round((actual / budgeted) * 100) : 0;
+    cards2.push({ label:'Budget Used', value: pct + '%', sub: budgeted ? `₹${actual.toLocaleString('en-IN')} of ₹${budgeted.toLocaleString('en-IN')}` : 'No budget entries yet', tone: pct > 100 ? 'text-red-600' : 'text-blue-600' });
+  }
+  if (canView('nocs')) {
+    const pending = nocs.filter(n => n.status !== 'received').length;
+    cards2.push({ label:'Pending NOC/AMC', value: pending, tone: pending ? 'text-amber-600' : '' });
+  }
+
+  const kpi2El = document.getElementById('kpi-cards-2');
+  if (kpi2El) {
+    kpi2El.innerHTML = cards2.map(c => `
+      <div class="glass rounded-2xl p-4">
+        <p class="text-2xl font-bold data-mono ${c.tone||''}">${c.value}</p>
+        <p class="eyebrow text-slate-500 mt-1">${c.label}</p>
+        ${c.sub ? `<p class="text-[10px] text-slate-400 mt-0.5">${c.sub}</p>` : ''}
+      </div>`).join('');
+  }
+
+  const snagEl = document.getElementById('snag-breakdown');
+  if (snagEl) {
+    const openSnags = snags.filter(s => s.status !== 'resolved');
+    const sevOrder = ['high','medium','low'];
+    const sevColors = { high:'bg-red-500', medium:'bg-amber-500', low:'bg-slate-400' };
+    const total = openSnags.length || 1;
+    const counts = {}; sevOrder.forEach(k => counts[k] = 0);
+    openSnags.forEach(s => { if (counts[s.severity] !== undefined) counts[s.severity]++; });
+    snagEl.innerHTML = openSnags.length ? sevOrder.map(k => `
+      <div>
+        <div class="flex justify-between text-xs mb-1"><span class="capitalize">${k}</span><span class="data-mono">${counts[k]}</span></div>
+        <div class="w-full bg-slate-200 rounded-full h-2"><div class="${sevColors[k]} h-2 rounded-full" style="width:${counts[k]/total*100}%"></div></div>
+      </div>`).join('') : '<p class="text-slate-400 text-sm">No open snags 🎉</p>';
+  }
+
+  const invEl = document.getElementById('inventory-breakdown');
+  if (invEl) {
+    const order = ['new','good','fair','poor'];
+    const colors = { new:'bg-emerald-500', good:'bg-blue-500', fair:'bg-amber-500', poor:'bg-red-500' };
+    const total = inventory.length || 1;
+    const counts = {}; order.forEach(k => counts[k] = 0);
+    inventory.forEach(i => { if (counts[i.condition] !== undefined) counts[i.condition]++; });
+    invEl.innerHTML = inventory.length ? `
+      <p class="text-xs text-slate-500 mb-2">${inventory.length} item type(s) tracked · by condition:</p>
+      ${order.map(k => `
+      <div>
+        <div class="flex justify-between text-xs mb-1"><span class="capitalize">${k}</span><span class="data-mono">${counts[k]}</span></div>
+        <div class="w-full bg-slate-200 rounded-full h-2"><div class="${colors[k]} h-2 rounded-full" style="width:${counts[k]/total*100}%"></div></div>
+      </div>`).join('')}` : '<p class="text-slate-400 text-sm">No inventory entries yet.</p>';
+  }
+}
+
+function renderKPIs(units) {
+  const total = units.length;
+  const completed = units.filter(u => u.status === 'completed').length;
+  const delayed = units.filter(u => u.status === 'delayed').length;
+  const avgPct = total ? Math.round(units.reduce((s,u)=>s+(u.completion_pct||0),0)/total) : 0;
+  const cards = [
+    { label:'Total Units', value: total },
+    { label:'Completed', value: completed, tone:'text-emerald-600' },
+    { label:'Delayed', value: delayed, tone: delayed ? 'text-red-600':'' },
+    { label:'Avg. Progress', value: avgPct+'%', tone:'text-blue-600' }
+  ];
+  document.getElementById('kpi-cards').innerHTML = cards.map(c => `
+    <div class="glass rounded-2xl p-4">
+      <p class="text-2xl font-bold data-mono ${c.tone||''}">${c.value}</p>
+      <p class="eyebrow text-slate-500 mt-1">${c.label}</p>
+    </div>`).join('');
+}
+
+function renderStatusBreakdown(units) {
+  const order = ['completed','in_progress','delayed','on_hold','pending'];
+  const colors = { completed:'bg-emerald-500', in_progress:'bg-blue-500', delayed:'bg-red-500', on_hold:'bg-amber-500', pending:'bg-slate-400' };
+  const total = units.length || 1;
+  const counts = {}; order.forEach(k=>counts[k]=0);
+  units.forEach(u => { if (counts[u.status] !== undefined) counts[u.status]++; });
+  document.getElementById('status-breakdown').innerHTML = order.map(k => `
+    <div>
+      <div class="flex justify-between text-xs mb-1"><span class="capitalize">${k.replace('_',' ')}</span><span class="data-mono">${counts[k]} (${Math.round(counts[k]/total*100)}%)</span></div>
+      <div class="w-full bg-slate-200 rounded-full h-2"><div class="${colors[k]} h-2 rounded-full" style="width:${counts[k]/total*100}%"></div></div>
+    </div>`).join('');
+}
+
+// ── VISUAL PLAN (real-time, add tower/floor/unit, update status) ─
+let visualCtx = null;
+let visualProjectId = null;
+function circularProgressSVG(pct, size, strokeWidth, color) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(pct,100) / 100) * circumference;
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" class="shrink-0">
+    <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="#e2e8f0" stroke-width="${strokeWidth}"/>
+    <circle cx="${size/2}" cy="${size/2}" r="${radius}" fill="none" stroke="${color}" stroke-width="${strokeWidth}"
+      stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" stroke-linecap="round"
+      transform="rotate(-90 ${size/2} ${size/2})"/>
+    <text x="50%" y="50%" text-anchor="middle" dy="0.35em" font-size="12" font-weight="700" font-family="JetBrains Mono, monospace" fill="#1e293b">${pct}%</text>
+  </svg>`;
+}
+
+const STATUS_LEGEND = [
+  { key:'completed', label:'Completed', dot:'bg-emerald-500' },
+  { key:'in_progress', label:'In Progress', dot:'bg-blue-500' },
+  { key:'delayed', label:'Delayed', dot:'bg-red-500' },
+  { key:'on_hold', label:'On Hold', dot:'bg-amber-500' },
+  { key:'pending', label:'Pending', dot:'bg-slate-300' }
+];
+
+async function renderVisual(view) {
+  view.innerHTML = `<p class="text-slate-400 text-sm">Loading…</p>`;
+  const projects = await loadCompanyProjects();
+  if (!projects.length) { view.innerHTML = `<p class="text-slate-500 text-sm">No project yet. Ask your Company Admin to add one under "Projects" first.</p>`; return; }
+  if (!visualProjectId || !projects.some(p => p.id === visualProjectId)) visualProjectId = projects[0].id;
+  visualCtx = { projectId: visualProjectId };
+
+  const visualPerms = session.profile?.permissions?.visual || {};
+  const canEdit = session.profile?.role === 'company_admin' || session.profile?.role === 'management' ||
+    visualPerms.add || visualPerms.update;
+
+  view.innerHTML = `
+    <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+      <h2 class="text-xl font-bold">Visual Plan</h2>
+      <div class="flex items-center gap-2">
+        ${projects.length > 1
+          ? `<select id="visual-project-select" class="border rounded-lg px-2 py-1.5 text-xs">${projects.map(p => `<option value="${p.id}" ${p.id===visualProjectId?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select>`
+          : `<span class="eyebrow text-slate-400">${escapeHtml(projects[0].name)}</span>`}
+        ${canEdit ? `<button id="add-tower-btn" class="text-xs px-3 py-1.5 rounded-xl border">+ Tower</button>` : ''}
+        ${canEdit ? `<button id="bulk-import-btn" class="text-xs px-3 py-1.5 rounded-xl bg-blue-600 text-white">⇪ Bulk Import</button>` : ''}
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-3 mb-4">
+      ${STATUS_LEGEND.map(s => `<span class="flex items-center gap-1.5 text-[11px] text-slate-600"><span class="w-2.5 h-2.5 rounded-sm ${s.dot} inline-block"></span>${s.label}</span>`).join('')}
+    </div>
+    <div id="tower-list" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4"></div>
+    <div id="unit-area"></div>
+    <div id="bulk-import-modal"></div>`;
+
+  if (projects.length > 1) {
+    document.getElementById('visual-project-select').addEventListener('change', (e) => {
+      visualProjectId = e.target.value;
+      renderVisual(view);
+    });
+  }
+  if (canEdit) {
+    document.getElementById('add-tower-btn').addEventListener('click', addTowerFlow);
+    document.getElementById('bulk-import-btn').addEventListener('click', () => openBulkImportModal(projects));
+  }
+
+  let latestTowers = [];
+  let latestUnits = [];
+  const repaintTowerCards = () => renderTowerCards(latestTowers, latestUnits, canEdit, projects);
+
+  const towersQ = collection(db, 'companies', session.companyId, 'projects', visualProjectId, 'towers');
+  const unsubTowers = onSnapshot(towersQ, (snap) => {
+    latestTowers = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    repaintTowerCards();
+  });
+  unsubscribers.push(unsubTowers);
+
+  // Also watch ALL units in the project (not just one tower) so tower
+  // cards can show live completion rings + counts without extra clicks.
+  const allUnitsQ = collection(db, 'companies', session.companyId, 'projects', visualProjectId, 'units');
+  const unsubUnits = onSnapshot(allUnitsQ, (snap) => {
+    latestUnits = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    repaintTowerCards();
+  });
+  unsubscribers.push(unsubUnits);
+}
+
+function renderTowerCards(towers, allUnits, canEdit, projects) {
+  const wrap = document.getElementById('tower-list');
+  if (!wrap) return;
+  if (!towers.length) {
+    wrap.innerHTML = `<p class="text-slate-400 text-sm col-span-full">No towers yet in ${escapeHtml(projects.find(p=>p.id===visualProjectId)?.name || 'this project')}.</p>`;
+    return;
+  }
+  wrap.innerHTML = towers.map(t => {
+    const tUnits = allUnits.filter(u => u.tower_id === t.id);
+    const total = tUnits.length;
+    const avgPct = total ? Math.round(tUnits.reduce((s,u) => s + (u.completion_pct||0), 0) / total) : 0;
+    const floors = new Set(tUnits.map(u => u.floor_name).filter(Boolean)).size;
+    const counts = { completed:0, in_progress:0, delayed:0, on_hold:0, pending:0 };
+    tUnits.forEach(u => { if (counts[u.status] !== undefined) counts[u.status]++; });
+    const ringColor = avgPct >= 100 ? '#10b981' : counts.delayed > 0 ? '#ef4444' : '#3b82f6';
+    return `<button data-tower="${t.id}" class="tower-card text-left glass rounded-2xl p-4 hover:shadow-lg transition">
+      <div class="flex items-center gap-3">
+        ${circularProgressSVG(avgPct, 52, 5, ringColor)}
+        <div>
+          <p class="font-semibold text-sm">${escapeHtml(t.name)}</p>
+          <p class="text-[10px] text-slate-500 data-mono">${floors || '—'} floors · ${total} units</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-x-2 gap-y-1 mt-3 text-[10px] text-slate-600">
+        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-emerald-500 inline-block"></span>Completed ${counts.completed}</span>
+        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-blue-500 inline-block"></span>In Progress ${counts.in_progress}</span>
+        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-red-500 inline-block"></span>Delayed ${counts.delayed}</span>
+        <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-sm bg-amber-500 inline-block"></span>On Hold ${counts.on_hold}</span>
+      </div>
+    </button>`;
+  }).join('');
+  wrap.querySelectorAll('.tower-card').forEach(b => b.addEventListener('click', () => showUnits(b.dataset.tower, canEdit, towers)));
+}
+
+async function addTowerFlow() {
+  const name = prompt('Tower name (e.g. Tower A):');
+  if (!name) return;
+  await addDoc(collection(db, 'companies', session.companyId, 'projects', visualCtx.projectId, 'towers'), { name });
+}
+
+// ── BULK IMPORT: units via CSV ──────────────────────────────────
+// Columns: unit_number, tower, floor, type, status, project (optional —
+// omit to import everything into whichever project is currently selected;
+// include it to spread one file across multiple existing projects).
+const VALID_STATUSES = ['pending','in_progress','completed','delayed','on_hold'];
+
+function bulkImportSampleCSV() {
+  return 'unit_number,tower,floor,type,status,project\nA-101,Tower A,1,2BHK,pending,\nA-102,Tower A,1,3BHK,in_progress,\nB-201,Tower B,2,2BHK,completed,\n';
+}
+
+function downloadSampleCSV() {
+  const blob = new Blob([bulkImportSampleCSV()], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'unit-import-template.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function openBulkImportModal(projects) {
+  const modal = document.getElementById('bulk-import-modal');
+  const activeProjectName = escapeHtml(projects.find(p => p.id === visualProjectId)?.name || '');
+  modal.innerHTML = `
+    <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl p-4 max-w-lg w-full max-h-[85vh] overflow-y-auto space-y-3">
+        <h3 class="font-bold text-sm">Bulk Import Units</h3>
+        <p class="text-xs text-slate-500">
+          CSV columns: <span class="data-mono">unit_number, tower, floor, type, status</span>.
+          Add an optional <span class="data-mono">project</span> column to spread one file across multiple existing projects —
+          otherwise everything goes into <b>${activeProjectName}</b> (the project currently selected).
+          Unknown towers are created automatically; unknown projects are skipped with a warning (add them under Projects first).
+        </p>
+        <button id="bi-sample" class="text-xs px-3 py-1.5 rounded-xl border">Download sample CSV</button>
+        <input id="bi-file" type="file" accept=".csv" class="block text-xs"/>
+        <p class="text-xs text-slate-400">— or paste CSV text below —</p>
+        <textarea id="bi-paste" rows="5" class="w-full border rounded-lg px-2 py-1.5 text-xs data-mono" placeholder="unit_number,tower,floor,type,status&#10;A-101,Tower A,1,2BHK,pending"></textarea>
+        <div class="flex gap-2">
+          <button id="bi-run" class="flex-1 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Import</button>
+          <button id="bi-cancel" class="flex-1 py-2 rounded-xl border text-sm">Cancel</button>
+        </div>
+        <div id="bi-result" class="text-xs space-y-1"></div>
+      </div>
+    </div>`;
+  document.getElementById('bi-cancel').addEventListener('click', () => modal.innerHTML = '');
+  document.getElementById('bi-sample').addEventListener('click', downloadSampleCSV);
+  document.getElementById('bi-run').addEventListener('click', () => runBulkImport(projects));
+}
+
+async function runBulkImport(projects) {
+  const btn = document.getElementById('bi-run');
+  const resultEl = document.getElementById('bi-result');
+  const fileInput = document.getElementById('bi-file');
+  const pasteText = document.getElementById('bi-paste').value.trim();
+  resultEl.innerHTML = '';
+
+  let csvText = pasteText;
+  if (fileInput.files[0]) csvText = await fileInput.files[0].text();
+  if (!csvText) { resultEl.innerHTML = '<p class="text-red-600">Choose a file or paste CSV text first.</p>'; return; }
+
+  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+  if (parsed.errors.length) {
+    resultEl.innerHTML = `<p class="text-red-600">CSV problem: ${escapeHtml(parsed.errors[0].message)} (row ${parsed.errors[0].row})</p>`;
+    return;
+  }
+  const rows = parsed.data;
+  if (!rows.length) { resultEl.innerHTML = '<p class="text-red-600">No data rows found.</p>'; return; }
+
+  btn.disabled = true; btn.textContent = 'Importing…';
+
+  const projectByName = {};
+  projects.forEach(p => projectByName[p.name.trim().toLowerCase()] = p.id);
+  const towerCache = {}; // `${projectId}::${towerNameLower}` -> towerId
+  const errors = [];
+  const toCreate = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNum = i + 2;
+    const unitNumber = (row.unit_number || '').trim();
+    const towerName = (row.tower || '').trim();
+    const floorName = (row.floor || '').trim();
+    const unitType = (row.type || '').trim();
+    let status = (row.status || 'pending').trim().toLowerCase();
+    const projectNameRaw = (row.project || '').trim();
+
+    if (!unitNumber || !towerName) { errors.push(`Row ${rowNum}: missing unit_number or tower — skipped.`); continue; }
+    if (!VALID_STATUSES.includes(status)) { errors.push(`Row ${rowNum}: unknown status "${status}" — defaulted to "pending".`); status = 'pending'; }
+
+    let projectId = visualProjectId;
+    if (projectNameRaw) {
+      const match = projectByName[projectNameRaw.toLowerCase()];
+      if (!match) { errors.push(`Row ${rowNum}: project "${projectNameRaw}" not found — skipped. Add it under Projects first.`); continue; }
+      projectId = match;
+    }
+
+    const towerKey = `${projectId}::${towerName.toLowerCase()}`;
+    if (!(towerKey in towerCache)) {
+      const towerSnap = await getDocs(query(
+        collection(db, 'companies', session.companyId, 'projects', projectId, 'towers'),
+        where('name', '==', towerName)
+      ));
+      towerCache[towerKey] = towerSnap.empty
+        ? (await addDoc(collection(db, 'companies', session.companyId, 'projects', projectId, 'towers'), { name: towerName })).id
+        : towerSnap.docs[0].id;
+    }
+
+    toCreate.push({
+      projectId,
+      data: {
+        unit_number: unitNumber, tower_id: towerCache[towerKey], floor_name: floorName, unit_type: unitType,
+        status, completion_pct: status === 'completed' ? 100 : 0,
+        created_at: serverTimestamp(), updated_by: session.email
+      }
+    });
+  }
+
+  let created = 0;
+  for (let i = 0; i < toCreate.length; i += 450) { // Firestore batch limit is 500 writes
+    const chunk = toCreate.slice(i, i + 450);
+    const batch = writeBatch(db);
+    chunk.forEach(item => {
+      const ref = doc(collection(db, 'companies', session.companyId, 'projects', item.projectId, 'units'));
+      batch.set(ref, item.data);
+    });
+    try { await batch.commit(); created += chunk.length; }
+    catch (err) { errors.push(`Batch write failed: ${err.message}`); }
+  }
+
+  btn.disabled = false; btn.textContent = 'Import';
+  resultEl.innerHTML = `
+    <p class="text-emerald-600 font-semibold">${created} unit(s) imported successfully.</p>
+    ${errors.length ? `<div class="text-amber-600 max-h-32 overflow-y-auto space-y-0.5">${errors.map(e => `<p>⚠ ${escapeHtml(e)}</p>`).join('')}</div>` : ''}
+  `;
+}
+
+let currentTowerUnitsCache = [];
+function showUnits(towerId, canEdit, towersList) {
+  const area = document.getElementById('unit-area');
+  area.innerHTML = `
+    <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="unit-tower-select" class="border rounded-lg px-2 py-1.5 text-xs">${towersList.map(t=>`<option value="${t.id}" ${t.id===towerId?'selected':''}>${escapeHtml(t.name)}</option>`).join('')}</select>
+        <select id="unit-status-filter" class="border rounded-lg px-2 py-1.5 text-xs">
+          <option value="">All statuses</option>
+          ${VALID_STATUSES.map(s=>`<option value="${s}">${s.replace('_',' ')}</option>`).join('')}
+        </select>
+        <select id="unit-type-filter" class="border rounded-lg px-2 py-1.5 text-xs"><option value="">All types</option></select>
+      </div>
+      ${canEdit ? `<button id="add-unit-btn" class="text-xs px-3 py-1.5 rounded-xl border">+ Unit</button>` : ''}
+    </div>
+    <div id="unit-grid" class="flex flex-wrap gap-2"></div>`;
+
+  document.getElementById('unit-tower-select').addEventListener('change', (e) => showUnits(e.target.value, canEdit, towersList));
+  document.getElementById('unit-status-filter').addEventListener('change', () => renderFilteredUnitGrid(canEdit));
+  document.getElementById('unit-type-filter').addEventListener('change', () => renderFilteredUnitGrid(canEdit));
+  if (canEdit) document.getElementById('add-unit-btn').addEventListener('click', () => addUnitFlow(towerId));
+
+  const unitsQ = query(
+    collection(db, 'companies', session.companyId, 'projects', visualCtx.projectId, 'units'),
+    where('tower_id', '==', towerId)
+  );
+  const unsub = onSnapshot(unitsQ, (snap) => {
+    currentTowerUnitsCache = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    const typeSelect = document.getElementById('unit-type-filter');
+    if (typeSelect) {
+      const existingTypes = [...new Set(currentTowerUnitsCache.map(u => u.unit_type).filter(Boolean))];
+      const currentVal = typeSelect.value;
+      typeSelect.innerHTML = `<option value="">All types</option>` + existingTypes.map(t => `<option value="${escapeHtml(t)}" ${t===currentVal?'selected':''}>${escapeHtml(t)}</option>`).join('');
+    }
+    renderFilteredUnitGrid(canEdit);
+  });
+  unsubscribers.push(unsub);
+}
+
+const STATUS_COLORS = { completed:'bg-emerald-500', in_progress:'bg-blue-500', delayed:'bg-red-500', on_hold:'bg-amber-500', pending:'bg-slate-300' };
+function renderFilteredUnitGrid(canEdit) {
+  const grid = document.getElementById('unit-grid');
+  if (!grid) return;
+  const statusFilter = document.getElementById('unit-status-filter')?.value || '';
+  const typeFilter = document.getElementById('unit-type-filter')?.value || '';
+  const units = currentTowerUnitsCache.filter(u =>
+    (!statusFilter || u.status === statusFilter) && (!typeFilter || u.unit_type === typeFilter)
+  );
+  grid.innerHTML = units.map(u => `
+    <div data-unit="${u.id}" class="unit-box w-16 h-16 rounded-xl ${STATUS_COLORS[u.status]||'bg-slate-300'} flex flex-col items-center justify-center text-white text-[10px] font-bold ${canEdit?'cursor-pointer':''}" title="${escapeHtml(u.unit_number)}">
+      <span class="data-mono">${escapeHtml(u.unit_number)}</span>
+      <span class="opacity-80 data-mono">${u.completion_pct||0}%</span>
+    </div>`).join('') || '<p class="text-slate-400 text-sm">No units match this filter.</p>';
+  if (canEdit) {
+    document.querySelectorAll('[data-unit]').forEach(box => {
+      box.addEventListener('click', () => updateUnitFlow(box.dataset.unit, currentTowerUnitsCache.find(u => u.id === box.dataset.unit)));
+    });
+  }
+}
+
+async function addUnitFlow(towerId) {
+  const unitNumber = prompt('Unit number (e.g. A-101):');
+  if (!unitNumber) return;
+  await addDoc(collection(db, 'companies', session.companyId, 'projects', visualCtx.projectId, 'units'), {
+    unit_number: unitNumber, tower_id: towerId, status:'pending', completion_pct:0,
+    created_at: serverTimestamp(), updated_by: session.email
+  });
+}
+
+async function updateUnitFlow(unitId, unit) {
+  const next = prompt(`Update status for ${unit.unit_number}\n(pending / in_progress / completed / delayed / on_hold)`, unit.status);
+  if (!next) return;
+  const pct = next === 'completed' ? 100 : parseInt(prompt('Completion % (0-100):', unit.completion_pct || 0)) || 0;
+  await updateDoc(doc(db, 'companies', session.companyId, 'projects', visualCtx.projectId, 'units', unitId), {
+    status: next, completion_pct: pct, updated_by: session.email, updated_at: serverTimestamp()
+  });
+  await addDoc(collection(db, 'companies', session.companyId, 'projects', visualCtx.projectId, 'activityLog'), {
+    actor: session.email, action: `Updated unit ${unit.unit_number} → ${next} (${pct}%)`, at: serverTimestamp()
+  });
+}
+
+// ── GENERIC MODULE ENGINE ────────────────────────────────────────
+// Powers every module in GENERIC_MODULES: project-scoped, permission-
+// gated (view/add/update/delete), real-time list, "+" button opens an
+// add modal (matches the original app's UX), edit modal, delete with
+// confirm, file uploads, addable categories, and conditional fields.
+const genericProjectId = {}; // remembers each module's selected project independently
+const customCategoryCache = {}; // `${moduleId}-${fieldKey}` -> extra options added at runtime
+
+async function loadCustomCategories(moduleId, fieldKey) {
+  const cacheKey = `${moduleId}-${fieldKey}`;
+  if (customCategoryCache[cacheKey]) return customCategoryCache[cacheKey];
+  try {
+    const snap = await getDoc(doc(db, 'companies', session.companyId, 'customCategories', cacheKey));
+    customCategoryCache[cacheKey] = snap.exists() ? (snap.data().options || []) : [];
+  } catch { customCategoryCache[cacheKey] = []; }
+  return customCategoryCache[cacheKey];
+}
+
+async function addCustomCategory(moduleId, fieldKey, newOption) {
+  const cacheKey = `${moduleId}-${fieldKey}`;
+  const current = await loadCustomCategories(moduleId, fieldKey);
+  if (current.includes(newOption)) return;
+  const updated = [...current, newOption];
+  customCategoryCache[cacheKey] = updated;
+  await setDoc(doc(db, 'companies', session.companyId, 'customCategories', cacheKey), { options: updated });
+}
+
+// A field is shown unless it declares showFor and the current type-field
+// value isn't in that list (used by Safety: training shows different
+// fields than incident_report, etc).
+function fieldVisible(f, currentTypeValue) {
+  if (!f.showFor) return true;
+  return f.showFor.includes(currentTypeValue);
+}
+
+function genericFieldHTML(f, existingValue, prefix, extraCategoryOptions) {
+  const id = `${prefix}-${f.key}`;
+  const label = `${f.label}${f.required ? ' *' : ''}`;
+  if (f.type === 'textarea') return `<div data-field-wrap="${f.key}"><label class="text-[10px] text-slate-500">${label}</label><textarea id="${id}" class="w-full border rounded-lg px-2 py-1.5 text-sm" rows="2">${escapeHtml(existingValue||'')}</textarea></div>`;
+  if (f.type === 'select') return `<div data-field-wrap="${f.key}"><label class="text-[10px] text-slate-500">${label}</label><select id="${id}" class="w-full border rounded-lg px-2 py-1.5 text-sm">${f.options.map(o=>`<option value="${o}" ${o===existingValue?'selected':''}>${o}</option>`).join('')}</select></div>`;
+  if (f.type === 'select-addable') {
+    const allOptions = [...f.options, ...(extraCategoryOptions||[])];
+    return `<div data-field-wrap="${f.key}">
+      <label class="text-[10px] text-slate-500">${label}</label>
+      <select id="${id}" class="w-full border rounded-lg px-2 py-1.5 text-sm">
+        ${allOptions.map(o=>`<option value="${o}" ${o===existingValue?'selected':''}>${o}</option>`).join('')}
+        <option value="__add_new__">+ Add new…</option>
+      </select>
+    </div>`;
+  }
+  if (f.type === 'date') return `<div data-field-wrap="${f.key}"><label class="text-[10px] text-slate-500">${label}</label><input id="${id}" type="date" value="${existingValue||''}" class="w-full border rounded-lg px-2 py-1.5 text-sm"/></div>`;
+  if (f.type === 'number') return `<div data-field-wrap="${f.key}"><label class="text-[10px] text-slate-500">${label}</label><input id="${id}" type="number" value="${existingValue!=null?existingValue:''}" class="w-full border rounded-lg px-2 py-1.5 text-sm"/></div>`;
+  if (f.type === 'file') return `<div data-field-wrap="${f.key}">
+    <label class="text-[10px] text-slate-500">${label}</label>
+    ${existingValue ? `<p class="text-xs mb-1"><a href="${escapeHtml(existingValue)}" target="_blank" class="text-blue-600 underline">Current file/link ↗</a></p>` : ''}
+    <input id="${id}-url" type="text" value="${existingValue && existingValue.startsWith('http') ? escapeHtml(existingValue) : ''}" placeholder="Paste a link, or choose a file below" class="w-full border rounded-lg px-2 py-1.5 text-sm mb-1"/>
+    <input id="${id}-file" type="file" class="w-full text-xs"/>
+  </div>`;
+  return `<div data-field-wrap="${f.key}"><label class="text-[10px] text-slate-500">${label}</label><input id="${id}" type="text" value="${escapeHtml(existingValue||'')}" class="w-full border rounded-lg px-2 py-1.5 text-sm"/></div>`;
+}
+
+// Wires "+Add new…" behavior for any select-addable fields in a form,
+// and shows/hides conditional fields (Safety type-dependent fields).
+function wireDynamicFieldBehavior(cfg, prefix) {
+  cfg.fields.filter(f => f.type === 'select-addable').forEach(f => {
+    const el = document.getElementById(`${prefix}-${f.key}`);
+    if (!el) return;
+    el.addEventListener('change', async () => {
+      if (el.value !== '__add_new__') return;
+      const newVal = prompt(`New ${f.label}:`);
+      if (!newVal) { el.value = f.options[0] || ''; return; }
+      await addCustomCategory(cfg.id, f.key, newVal);
+      const opt = document.createElement('option');
+      opt.value = newVal; opt.textContent = newVal;
+      el.insertBefore(opt, el.lastElementChild);
+      el.value = newVal;
+    });
+  });
+  if (cfg.conditionalOn) {
+    const typeEl = document.getElementById(`${prefix}-${cfg.conditionalOn}`);
+    if (!typeEl) return;
+    const applyVisibility = () => {
+      cfg.fields.forEach(f => {
+        const wrap = document.querySelector(`[data-field-wrap="${f.key}"]`);
+        // only toggle wraps that belong to THIS form instance (share prefix scope via closest form/modal)
+        if (!wrap) return;
+        const belongsHere = wrap.querySelector(`#${prefix}-${f.key}`);
+        if (!belongsHere) return;
+        wrap.style.display = fieldVisible(f, typeEl.value) ? '' : 'none';
+      });
+    };
+    typeEl.addEventListener('change', applyVisibility);
+    applyVisibility();
+  }
+}
+
+async function readGenericFields(cfg, prefix, projectId) {
+  const data = {};
+  let missingRequired = false;
+  for (const f of cfg.fields) {
+    if (f.showFor && cfg.conditionalOn) {
+      const typeEl = document.getElementById(`${prefix}-${cfg.conditionalOn}`);
+      if (typeEl && !fieldVisible(f, typeEl.value)) { data[f.key] = ''; continue; }
+    }
+    if (f.type === 'file') {
+      const urlEl = document.getElementById(`${prefix}-${f.key}-url`);
+      const fileEl = document.getElementById(`${prefix}-${f.key}-file`);
+      if (fileEl && fileEl.files[0]) {
+        const file = fileEl.files[0];
+        const fileRef = ref(storage, `companies/${session.companyId}/projects/${projectId}/${cfg.id}/${Date.now()}-${file.name}`);
+        await uploadBytes(fileRef, file);
+        data[f.key] = await getDownloadURL(fileRef);
+      } else if (urlEl && urlEl.value.trim()) {
+        data[f.key] = urlEl.value.trim();
+      } else {
+        data[f.key] = document.getElementById(`${prefix}-${f.key}`)?.dataset?.existing || '';
+      }
+      continue;
+    }
+    const el = document.getElementById(`${prefix}-${f.key}`);
+    const val = el ? el.value.trim() : '';
+    if (f.required && !val) missingRequired = true;
+    data[f.key] = f.type === 'number' ? (val ? Number(val) : 0) : val;
+  }
+  return { data, missingRequired };
+}
+
+function genericItemCardHTML(cfg, item, canUpdate, canDelete) {
+  // Snags get a distinctive high-visibility card: colored square by
+  // severity, with open+high-severity ones blinking so they can't be missed.
+  if (cfg.cardStyle === 'severity-square') {
+    const sevColor = { high:'bg-red-500', medium:'bg-amber-500', low:'bg-slate-400' }[item.severity] || 'bg-slate-400';
+    const isUrgent = item.severity === 'high' && item.status !== 'resolved';
+    return `<div class="glass rounded-xl p-3 text-sm flex items-start gap-3">
+      <div class="w-10 h-10 rounded-lg ${sevColor} shrink-0 ${isUrgent ? 'animate-pulse' : ''}"></div>
+      <div class="flex-1">
+        <p class="font-semibold">${escapeHtml(item.title || '(untitled)')}</p>
+        <p class="text-[11px] text-slate-500">${escapeHtml(item.unit_number || '')} ${item.assigned_to ? '· Assigned: '+escapeHtml(item.assigned_to) : ''}</p>
+        <p class="text-[10px] text-slate-400 mt-0.5 capitalize">${escapeHtml(item.severity||'')} · ${escapeHtml((item.status||'').replace('_',' '))}</p>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        ${canUpdate ? `<button data-gm-edit="${item.id}" class="text-xs px-2 py-1 rounded-lg border">Edit</button>` : ''}
+        ${canDelete ? `<button data-gm-delete="${item.id}" class="text-xs px-2 py-1 rounded-lg border border-red-300 text-red-600">Delete</button>` : ''}
+      </div>
+    </div>`;
+  }
+  const primary = item[cfg.fields[0].key] || '(untitled)';
+  const secondary = cfg.fields.slice(1).filter(f => item[f.key] && f.type !== 'file');
+  const fileField = cfg.fields.find(f => f.type === 'file' && item[f.key]);
+  return `<div class="glass rounded-xl p-3 text-sm flex justify-between items-start gap-2">
+    <div>
+      <p class="font-semibold">${escapeHtml(primary)}</p>
+      <p class="text-[10px] text-slate-400 mt-1">${secondary.map(f=>`${f.label}: ${escapeHtml(String(item[f.key]))}`).join(' · ')}</p>
+      ${fileField ? `<a href="${escapeHtml(item[fileField.key])}" target="_blank" class="text-[10px] text-blue-600 underline">📎 ${fileField.label}</a>` : ''}
+    </div>
+    <div class="flex gap-1 shrink-0">
+      ${canUpdate ? `<button data-gm-edit="${item.id}" class="text-xs px-2 py-1 rounded-lg border">Edit</button>` : ''}
+      ${canDelete ? `<button data-gm-delete="${item.id}" class="text-xs px-2 py-1 rounded-lg border border-red-300 text-red-600">Delete</button>` : ''}
+    </div>
+  </div>`;
+}
+
+async function renderGenericModule(view, cfg) {
+  view.innerHTML = `<p class="text-slate-400 text-sm">Loading…</p>`;
+  const projects = await loadCompanyProjects();
+  if (!projects.length) { view.innerHTML = `<p class="text-slate-500 text-sm">No project yet. Ask your Company Admin to add one under "Projects" first.</p>`; return; }
+  if (!genericProjectId[cfg.id] || !projects.some(p => p.id === genericProjectId[cfg.id])) genericProjectId[cfg.id] = projects[0].id;
+  const projectId = genericProjectId[cfg.id];
+
+  const role = session.profile?.role;
+  const isManager = role === 'company_admin' || role === 'management';
+  const perms = session.profile?.permissions?.[cfg.id] || {};
+  const canAdd = isManager || perms.add;
+  const canUpdate = isManager || perms.update;
+  const canDelete = isManager || perms.delete;
+
+  view.innerHTML = `
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <h2 class="text-xl font-bold">${cfg.label}</h2>
+      <div class="flex items-center gap-2">
+        ${projects.length > 1
+          ? `<select id="gm-project-select" class="border rounded-lg px-2 py-1.5 text-xs">${projects.map(p => `<option value="${p.id}" ${p.id===projectId?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select>`
+          : `<span class="eyebrow text-slate-400">${escapeHtml(projects[0].name)}</span>`}
+        ${canAdd ? `<button id="gm-add-btn" class="text-xs px-3 py-1.5 rounded-xl bg-blue-600 text-white font-semibold">+ ${cfg.label}</button>` : ''}
+      </div>
+    </div>
+    ${cfg.id === 'society' ? '<div id="handover-progress" class="glass rounded-2xl p-4 mb-4"></div>' : ''}
+    <div id="gm-list" class="space-y-2"></div>
+    <div id="gm-add-modal"></div>
+    <div id="gm-edit-modal"></div>`;
+
+  if (projects.length > 1) {
+    document.getElementById('gm-project-select').addEventListener('change', (e) => {
+      genericProjectId[cfg.id] = e.target.value;
+      renderGenericModule(view, cfg);
+    });
+  }
+  if (canAdd) document.getElementById('gm-add-btn').addEventListener('click', () => openGenericAdd(cfg, projectId));
+
+  const colRef = collection(db, 'companies', session.companyId, 'projects', projectId, cfg.id);
+  const unsub = onSnapshot(colRef, (snap) => {
+    const items = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    document.getElementById('gm-list').innerHTML = items.map(item => genericItemCardHTML(cfg, item, canUpdate, canDelete)).join('')
+      || `<p class="text-slate-400 text-sm">No ${cfg.label.toLowerCase()} yet.</p>`;
+    if (canUpdate) document.querySelectorAll('[data-gm-edit]').forEach(b => b.addEventListener('click', () => openGenericEdit(cfg, projectId, items.find(i => i.id === b.dataset.gmEdit))));
+    if (canDelete) document.querySelectorAll('[data-gm-delete]').forEach(b => b.addEventListener('click', () => genericDeleteFlow(cfg, projectId, b.dataset.gmDelete)));
+
+    // Handover Pack gets a progress bar: % of to-do items marked completed
+    if (cfg.id === 'society') {
+      const total = items.length || 1;
+      const done = items.filter(i => i.status === 'completed').length;
+      const pct = Math.round((done / total) * 100);
+      const bar = document.getElementById('handover-progress');
+      if (bar) bar.innerHTML = `
+        <div class="flex justify-between text-xs mb-1"><span class="font-semibold">Handover Progress</span><span class="data-mono">${done} / ${items.length} (${pct}%)</span></div>
+        <div class="w-full bg-slate-200 rounded-full h-3"><div class="bg-emerald-500 h-3 rounded-full transition-all" style="width:${pct}%"></div></div>`;
+    }
+  }, (err) => { document.getElementById('gm-list').innerHTML = `<p class="text-red-600 text-sm">Error: ${err.message}</p>`; });
+  unsubscribers.push(unsub);
+}
+
+async function openGenericAdd(cfg, projectId) {
+  const modal = document.getElementById('gm-add-modal');
+  const extraCats = {};
+  for (const f of cfg.fields.filter(f => f.type === 'select-addable')) {
+    extraCats[f.key] = await loadCustomCategories(cfg.id, f.key);
+  }
+  modal.innerHTML = `
+    <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl p-4 max-w-md w-full max-h-[85vh] overflow-y-auto space-y-2">
+        <h3 class="font-bold text-sm">Add ${cfg.label}</h3>
+        ${cfg.fields.map(f => genericFieldHTML(f, '', 'gm-f', extraCats[f.key])).join('')}
+        <div class="flex gap-2 pt-2">
+          <button id="gm-f-save" class="flex-1 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Add</button>
+          <button id="gm-f-cancel" class="flex-1 py-2 rounded-xl border text-sm">Cancel</button>
+        </div>
+        <p id="gm-f-error" class="hidden text-xs text-red-600"></p>
+      </div>
+    </div>`;
+  wireDynamicFieldBehavior(cfg, 'gm-f');
+  document.getElementById('gm-f-cancel').addEventListener('click', () => modal.innerHTML = '');
+  document.getElementById('gm-f-save').addEventListener('click', async () => {
+    const btn = document.getElementById('gm-f-save');
+    const errEl = document.getElementById('gm-f-error');
+    errEl.classList.add('hidden');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+      const { data, missingRequired } = await readGenericFields(cfg, 'gm-f', projectId);
+      if (missingRequired) { errEl.textContent = 'Please fill required fields.'; errEl.classList.remove('hidden'); btn.disabled=false; btn.textContent='Add'; return; }
+      await addDoc(collection(db, 'companies', session.companyId, 'projects', projectId, cfg.id), {
+        ...data, created_at: serverTimestamp(), created_by: session.email
+      });
+      addDoc(collection(db, 'companies', session.companyId, 'projects', projectId, 'activityLog'), {
+        actor: session.email, action: `Added ${cfg.label} — ${data[cfg.fields[0].key] || ''}`, at: serverTimestamp()
+      }).catch(() => {});
+      modal.innerHTML = '';
+    } catch (err) {
+      errEl.textContent = err.message; errEl.classList.remove('hidden');
+      btn.disabled = false; btn.textContent = 'Add';
+    }
+  });
+}
+
+async function openGenericEdit(cfg, projectId, item) {
+  const modal = document.getElementById('gm-edit-modal');
+  const extraCats = {};
+  for (const f of cfg.fields.filter(f => f.type === 'select-addable')) {
+    extraCats[f.key] = await loadCustomCategories(cfg.id, f.key);
+  }
+  modal.innerHTML = `
+    <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div class="bg-white rounded-2xl p-4 max-w-md w-full max-h-[85vh] overflow-y-auto space-y-2">
+        <h3 class="font-bold text-sm">Edit ${cfg.label}</h3>
+        ${cfg.fields.map(f => genericFieldHTML(f, item[f.key], 'gm-ef', extraCats[f.key])).join('')}
+        <div class="flex gap-2 pt-2">
+          <button id="gm-ef-save" class="flex-1 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold">Save</button>
+          <button id="gm-ef-cancel" class="flex-1 py-2 rounded-xl border text-sm">Cancel</button>
+        </div>
+        <p id="gm-ef-error" class="hidden text-xs text-red-600"></p>
+      </div>
+    </div>`;
+  wireDynamicFieldBehavior(cfg, 'gm-ef');
+  document.getElementById('gm-ef-cancel').addEventListener('click', () => modal.innerHTML = '');
+  document.getElementById('gm-ef-save').addEventListener('click', async () => {
+    const btn = document.getElementById('gm-ef-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const { data } = await readGenericFields(cfg, 'gm-ef', projectId);
+      await updateDoc(doc(db, 'companies', session.companyId, 'projects', projectId, cfg.id, item.id), {
+        ...data, updated_by: session.email, updated_at: serverTimestamp()
+      });
+      modal.innerHTML = '';
+    } catch (err) {
+      document.getElementById('gm-ef-error').textContent = err.message;
+      document.getElementById('gm-ef-error').classList.remove('hidden');
+      btn.disabled = false; btn.textContent = 'Save';
+    }
+  });
+}
+
+async function genericDeleteFlow(cfg, projectId, itemId) {
+  if (!confirm(`Delete this ${cfg.label} entry? This can't be undone.`)) return;
+  await deleteDoc(doc(db, 'companies', session.companyId, 'projects', projectId, cfg.id, itemId));
+}
+
+// ── ACTIVITY LOG (read-only — entries are written automatically by
+//    the app itself whenever something changes; nobody adds these by hand) ─
+let activityProjectId = null;
+async function renderActivityLog(view) {
+  view.innerHTML = `<p class="text-slate-400 text-sm">Loading…</p>`;
+  const projects = await loadCompanyProjects();
+  if (!projects.length) { view.innerHTML = `<p class="text-slate-500 text-sm">No project yet.</p>`; return; }
+  if (!activityProjectId || !projects.some(p => p.id === activityProjectId)) activityProjectId = projects[0].id;
+
+  view.innerHTML = `
+    <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <h2 class="text-xl font-bold">Activity Log</h2>
+      ${projects.length > 1
+        ? `<select id="activity-project-select" class="border rounded-lg px-2 py-1.5 text-xs">${projects.map(p => `<option value="${p.id}" ${p.id===activityProjectId?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select>`
+        : `<span class="eyebrow text-slate-400">${escapeHtml(projects[0].name)}</span>`}
+    </div>
+    <div id="activity-list" class="space-y-2"></div>`;
+
+  if (projects.length > 1) {
+    document.getElementById('activity-project-select').addEventListener('change', (e) => {
+      activityProjectId = e.target.value;
+      renderActivityLog(view);
+    });
+  }
+
+  const q = query(
+    collection(db, 'companies', session.companyId, 'projects', activityProjectId, 'activityLog'),
+    orderBy('at', 'desc')
+  );
+  const unsub = onSnapshot(q, (snap) => {
+    const entries = snap.docs.map(d => d.data()).slice(0, 100);
+    document.getElementById('activity-list').innerHTML = entries.map(a => `
+      <div class="glass rounded-xl p-3 text-sm">
+        <p class="font-medium">${escapeHtml(a.actor || 'System')}</p>
+        <p class="text-slate-500 text-xs">${escapeHtml(a.action || '')}</p>
+        <p class="text-[10px] text-slate-400 mt-1 data-mono">${a.at?.toDate ? a.at.toDate().toLocaleString() : ''}</p>
+      </div>`).join('') || '<p class="text-slate-400 text-sm">No activity recorded yet.</p>';
+  }, (err) => { document.getElementById('activity-list').innerHTML = `<p class="text-red-600 text-sm">Error: ${err.message}</p>`; });
+  unsubscribers.push(unsub);
+}
+
+function escapeHtml(str) {
+  return String(str ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>
